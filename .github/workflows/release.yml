@@ -41,6 +41,8 @@ jobs:
 
 
     release:
+        permissions:
+            contents: write
         needs: [build_matrix]
         runs-on: ubuntu-latest
         steps:
