@@ -56,6 +56,4 @@ jobs:
               uses: softprops/action-gh-release@v2
               with:
                 files: |
-                  ${{github.workspace}}/artifacts/arrayniac-x86_64-pc-windows-msvc.exe
-                  ${{github.workspace}}/artifacts/arrayniac-x86_64-unknown-linux-gnu
-                  ${{github.workspace}}/artifacts/arrayniac-aarch64-apple-darwin
+                  ${{github.workspace}}/artifacts/*/*
