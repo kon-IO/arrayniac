@@ -32,7 +32,7 @@ jobs:
             - name: Build
               run: cargo build --release
             - name: Rename Windows
-              if: contains(${{matrix.platform.target}}, 'windows')
+              if: contains(matrix.platform.target, 'windows')
               run: |
                 cd target/release
                 move arrayniac.exe arrayniac-${{matrix.platform.taret}}.exe
