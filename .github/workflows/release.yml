@@ -51,8 +51,8 @@ jobs:
             - name: Download artifacts
               uses: actions/download-artifact@v4
               with:
-                path: artifacts
+                path: ${{github.workspace}}/artifacts
             - name: Release
               uses: softprops/action-gh-release@v2
               with:
-                files: artifacts/*
+                files: ${{github.workspace}}/artifacts/*
