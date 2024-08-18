@@ -35,7 +35,7 @@ jobs:
               if: contains(${{matrix.platform.target}}, 'windows')
               run: |
                 cd target/release
-                rename arrayniac.exe arrayniac-${{matrix.platform.taret}}.exe
+                move arrayniac.exe arrayniac-${{matrix.platform.taret}}.exe
                 cd ../..
             - name: Rename
               if: ${{ !contains(matrix.platform.target, 'windows') }}
