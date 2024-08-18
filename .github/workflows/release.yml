@@ -47,7 +47,7 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                 name: arrayniac-${{matrix.platform.target}}${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
-                path: target/release/arrayniac${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
+                path: target/release/arrayniac-${{matrix.platform.target}}${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
                 overwrite: true
                 retention-days: 1
 
