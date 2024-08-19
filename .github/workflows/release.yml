@@ -36,20 +36,21 @@ jobs:
               if: ${{ matrix.platform.target == 'x86_64-apple-darwin' }}
               run: rustup target add ${{ matrix.platform.target }}
             - name: Build
-              run: cargo build ${{ matrix.platform.target == 'x86_64-apple-darwin' && format('--target {0}', matrix.platform.target) || '' }} --release
+              run: cargo build ${{ format('--target {0}', matrix.platform.target) }} --release
+            - name: Move executable
+              if: ${{ !contains(matrix.platform.target, 'windows') }}
+              run: |
+                mv target/${{ matrix.platform.target }}/release/arrayniac target/release
+            - name: Move executable Windows
+              if: contains(matrix.platform.target, 'windows')
+              run: |
+                move target/${{ matrix.platform.target }}/release/arrayniac target/release
             - name: Rename Windows
               if: contains(matrix.platform.target, 'windows')
               run: |
                 cd target/release
                 move arrayniac.exe arrayniac-${{matrix.platform.target}}.exe
                 cd ../..
-            - name: Move executable macOS x64
-              if: matrix.platform.target == 'x86_64-apple-darwin'
-              run: |
-                ls
-                ls target
-                ls target/release
-                mv target/x86_64-apple-darwin/release/arrayniac target/release
             - name: Rename
               if: ${{ !contains(matrix.platform.target, 'windows') }}
               run: |
