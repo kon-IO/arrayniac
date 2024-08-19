@@ -43,6 +43,10 @@ jobs:
                 cd target/release
                 move arrayniac.exe arrayniac-${{matrix.platform.target}}.exe
                 cd ../..
+            - name: Move executable macOS x64
+              if: matrix.platform.target == 'x86_64-apple-darwin'
+              run: |
+                mv target/x86_64-apple-darwin/arrayniac target/release
             - name: Rename
               if: ${{ !contains(matrix.platform.target, 'windows') }}
               run: |
