@@ -34,8 +34,7 @@ jobs:
               uses: actions-rust-lang/setup-rust-toolchain@v1
             - name: Cross-compile Apple
               if: ${{ matrix.platform.target == 'x86_64-apple-darwin' }}
-              run: |
-                rustup add targets ${{matrix.platform.target}}
+              run: rustup target add ${{ matrix.platform.target }}
             - name: Build
               run: cargo build ${{ matrix.platform.target == 'x86_64-apple-darwin' && format('--target {0}', matrix.platform.target) || '' }} --release
             - name: Rename Windows
