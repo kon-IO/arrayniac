@@ -47,6 +47,7 @@ jobs:
               if: ${{ !contains(matrix.platform.target, 'windows') }}
               run: |
                 cd target/release
+                ls
                 mv arrayniac arrayniac-${{matrix.platform.target}}
                 cd ../..
             - name: Upload artifact
