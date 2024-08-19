@@ -50,7 +50,7 @@ jobs:
                 ls target
                 ls target/release
                 mkdir target/release
-                mv target/x86_64-apple-darwin/arrayniac target/release
+                mv target/x86_64-apple-darwin/release/arrayniac target/release
             - name: Rename
               if: ${{ !contains(matrix.platform.target, 'windows') }}
               run: |
