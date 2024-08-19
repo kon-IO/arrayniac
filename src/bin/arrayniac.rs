@@ -74,10 +74,9 @@ fn main() -> ExitCode {
 
     let root: Value = sonic_rs::from_str(&buf).unwrap();
 
-    let parsed_json = parse_root(&root);
-    dbg!(&parsed_json.get_variants());
+    let parsed_json = parse_root(&root, false);
 
-    let (out_json, index) = parsed_json.to_string();
+    let (out_json, index) = parsed_json.to_string().unwrap();
 
     let Ok(mut out_file) = File::create(&args[2]) else {
         eprintln!("Could not open output file {}", args[2]);

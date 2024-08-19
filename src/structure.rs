@@ -52,31 +52,46 @@ impl ObjectVariant {
 
 pub type ObjectVariants = Vec<Arc<ObjectVariant>>;
 
-#[derive(Debug)]
 pub struct Json {
-    root: Node,
-    variants: HashMap<String, ObjectVariants>,
+    path: String,
+    indent: usize,
+    info_print: bool,
+    variant_map: HashMap<String, ObjectVariants>,
+    res: Option<Node>,
 }
 
 impl Json {
+    fn new(info_print: bool) -> Json {
+        return Json {
+            path: String::new(),
+            indent: 0,
+            info_print: info_print,
+            variant_map: HashMap::new(),
+            res: None,
+        };
+    }
+
     pub fn get_root(&self) -> &Node {
-        return &self.root;
+        return self.res.as_ref().unwrap();
     }
 
     pub fn get_variants(&self) -> &HashMap<String, ObjectVariants> {
-        return &self.variants;
+        return &self.variant_map;
     }
 
-    pub fn to_string(&self) -> (String, String) {
-        (
-            self.to_string_node(&mut String::new(), &self.root),
+    pub fn to_string(&self) -> Option<(String, String)> {
+        let Some(root) = &self.res else {
+            return None;
+        };
+        Some((
+            self.to_string_node(&mut String::new(), root),
             self.to_string_variant(),
-        )
+        ))
     }
 
     fn to_string_variant(&self) -> String {
         let mut out_map: HashMap<String, Value> = HashMap::new();
-        for (path, variants) in &self.variants {
+        for (path, variants) in &self.variant_map {
             if variants.len() == 1 {
                 let mut var_map = HashMap::new();
                 variants
@@ -164,9 +179,8 @@ impl Json {
     }
 
     fn get_variant(&self, path: &String, ind: usize) -> (usize, Arc<ObjectVariant>) {
-        println!("Path: {}", path);
         let our_variants = self
-            .variants
+            .variant_map
             .get(path)
             .expect("Expected variant vector to exist");
         (
@@ -177,234 +191,218 @@ impl Json {
                 .clone(),
         )
     }
-}
 
-// struct TypeNode {
-//     typ: JsonType,
-//     path: String,
-//     variants: Option<Variants>,
-// }
-
-// impl TypeNode {
-//     fn new(path: String, typ: JsonType) -> TypeNode {
-//         return TypeNode {
-//             typ,
-//             path,
-//             variants: None,
-//         };
-//     }
-
-//     pub fn create_from_root(root: &Value) -> TypeNode {
-//         match root.get_type() {
-//             JsonType::Array => {
-//                 let t = TypeNode::new(String::new(), JsonType::Array);
-//                 t.variants = Some(make_variants(root));
-//                 t
-//             }
-//             JsonType::Boolean => TypeNode::new(String::new(), JsonType::Boolean),
-//             JsonType::Null => TypeNode::new(String::new(), JsonType::Null),
-//             JsonType::Number => TypeNode::new(String::new(), JsonType::Number),
-//             JsonType::Object => {}
-//             JsonType::String => TypeNode::new(String::new(), JsonType::String),
-//         }
-//     }
-// }
-
-// fn make_variants(of: &Value) -> Variants {
-//     match of.get_type() {
-//         bruh @ (JsonType::Boolean | JsonType::Null | JsonType::Number | JsonType::String) => vec![TypeNode::new(bruh)],
-//     }
-// }
-
-pub fn parse_root(root: &Value) -> Json {
-    let mut obj_map: HashMap<String, ObjectVariants> = HashMap::new();
-    let res = match root.get_type() {
-        JsonType::Boolean => Node {
-            ind: None,
-            val: JsonValue::Boolean(root.as_bool().unwrap()),
-        },
-        JsonType::Null => Node {
-            ind: None,
-            val: JsonValue::Null(()),
-        },
-        JsonType::String => Node {
-            ind: None,
-            val: JsonValue::String(root.as_str().unwrap().to_owned()),
-        },
-        JsonType::Number => Node {
-            ind: None,
-            val: JsonValue::Number(root.as_number().unwrap()),
-        },
-        JsonType::Array => {
-            let mut node = Node {
+    fn parse_root(&mut self, root: &Value) {
+        let res = match root.get_type() {
+            JsonType::Boolean => Node {
                 ind: None,
-                val: JsonValue::Array(Vec::new()),
-            };
-            parse_array(root, &mut String::new(), &mut obj_map, &mut node);
-            node
-        }
-        JsonType::Object => {
-            let mut new_node = Node {
-                ind: None,
-                val: JsonValue::Object(HashMap::new()),
-            };
-            let ind = parse_object(root, &mut String::new(), &mut obj_map, &mut new_node);
-            new_node.set_ind(ind);
-            new_node
-        }
-    };
-    Json {
-        root: res,
-        variants: obj_map,
-    }
-}
-
-fn parse_array(
-    node: &Value,
-    path: &mut String,
-    obj_map: &mut HashMap<String, ObjectVariants>,
-    array_node: &mut Node,
-) {
-    assert!(node.get_type() == JsonType::Array);
-
-    let JsonValue::Array(arr) = &mut array_node.val else {
-        panic!("Expected node to be of array type");
-    };
-
-    node.as_array()
-        .unwrap()
-        .iter()
-        .for_each(|v| match v.get_type() {
-            JsonType::Null => arr.push(Node {
+                val: JsonValue::Boolean(root.as_bool().unwrap()),
+            },
+            JsonType::Null => Node {
                 ind: None,
                 val: JsonValue::Null(()),
-            }),
-            JsonType::Boolean => arr.push(Node {
+            },
+            JsonType::String => Node {
                 ind: None,
-                val: JsonValue::Boolean(v.as_bool().unwrap()),
-            }),
-            JsonType::Number => arr.push(Node {
+                val: JsonValue::String(root.as_str().unwrap().to_owned()),
+            },
+            JsonType::Number => Node {
                 ind: None,
-                val: JsonValue::Number(v.as_number().unwrap()),
-            }),
-            JsonType::String => arr.push(Node {
-                ind: None,
-                val: JsonValue::String(v.as_str().unwrap().to_owned()),
-            }),
+                val: JsonValue::Number(root.as_number().unwrap()),
+            },
             JsonType::Array => {
-                let mut arr_node = Node {
+                let mut node = Node {
                     ind: None,
                     val: JsonValue::Array(Vec::new()),
                 };
-                path.push_str("[]");
-                parse_array(v, path, obj_map, &mut arr_node);
-                path.truncate(path.len() - 2);
-                arr.push(arr_node);
+                self.parse_array(root, &mut node);
+                node
             }
             JsonType::Object => {
                 let mut new_node = Node {
                     ind: None,
                     val: JsonValue::Object(HashMap::new()),
                 };
-                path.push_str("[]");
-                let ind = parse_object(v, path, obj_map, &mut new_node);
-                path.truncate(path.len() - 2);
+                let ind = self.parse_object(root, &mut new_node);
                 new_node.set_ind(ind);
-                arr.push(new_node);
-            }
-        });
-}
-
-fn parse_object(
-    node: &Value,
-    path: &mut String,
-    obj_map: &mut HashMap<String, ObjectVariants>,
-    obj_node: &mut Node,
-) -> usize {
-    assert!(node.get_type() == JsonType::Object);
-
-    let JsonValue::Object(map) = &mut obj_node.val else {
-        panic!("Expected node to be of object type");
-    };
-
-    let mut obj_type = Vec::new();
-
-    node.as_object().unwrap().iter().for_each(|(k, v)| {
-        obj_type.push((k.to_owned(), v.get_type()));
-        match v.get_type() {
-            JsonType::Boolean => {
-                map.insert(
-                    k.to_owned(),
-                    Node {
-                        ind: None,
-                        val: JsonValue::Boolean(v.as_bool().unwrap()),
-                    },
-                );
-            }
-            JsonType::Null => {
-                map.insert(
-                    k.to_owned(),
-                    Node {
-                        ind: None,
-                        val: JsonValue::Null(()),
-                    },
-                );
-            }
-            JsonType::Number => {
-                map.insert(
-                    k.to_owned(),
-                    Node {
-                        ind: None,
-                        val: JsonValue::Number(v.as_number().unwrap()),
-                    },
-                );
-            }
-            JsonType::String => {
-                map.insert(
-                    k.to_owned(),
-                    Node {
-                        ind: None,
-                        val: JsonValue::String(v.as_str().unwrap().to_owned()),
-                    },
-                );
-            }
-            JsonType::Array => {
-                let mut arr_node = Node {
-                    ind: None,
-                    val: JsonValue::Array(Vec::new()),
-                };
-                path.push('.');
-                path.push_str(k);
-                parse_array(v, path, obj_map, &mut arr_node);
-                path.truncate(path.len() - k.len() - 1);
-                map.insert(k.to_owned(), arr_node);
-            }
-            JsonType::Object => {
-                let mut new_node = Node {
-                    ind: None,
-                    val: JsonValue::Object(HashMap::new()),
-                };
-                path.push('.');
-                path.push_str(k);
-                let ind = parse_object(v, path, obj_map, &mut new_node);
-                path.truncate(path.len() - k.len() - 1);
-                new_node.set_ind(ind);
-                map.insert(k.to_owned(), new_node);
+                new_node
             }
         };
-    });
-
-    obj_type.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    if obj_map.get(path).is_none() {
-        obj_map.insert(path.clone(), Vec::new());
-    };
-    let var_vec = obj_map.get_mut(path).unwrap();
-    let variant_ind;
-    if let Some(existing) = var_vec.iter().position(|v| v.variant == obj_type) {
-        variant_ind = existing;
-    } else {
-        var_vec.push(Arc::new(ObjectVariant::new(obj_type)));
-        variant_ind = var_vec.len() - 1;
+        self.res = Some(res);
     }
-    variant_ind
+
+    fn parse_array(&mut self, node: &Value, array_node: &mut Node) {
+        assert!(node.get_type() == JsonType::Array);
+
+        let JsonValue::Array(arr) = &mut array_node.val else {
+            panic!("Expected node to be of array type");
+        };
+
+        node.as_array()
+            .unwrap()
+            .iter()
+            .for_each(|v| match v.get_type() {
+                JsonType::Null => arr.push(Node {
+                    ind: None,
+                    val: JsonValue::Null(()),
+                }),
+                JsonType::Boolean => arr.push(Node {
+                    ind: None,
+                    val: JsonValue::Boolean(v.as_bool().unwrap()),
+                }),
+                JsonType::Number => arr.push(Node {
+                    ind: None,
+                    val: JsonValue::Number(v.as_number().unwrap()),
+                }),
+                JsonType::String => arr.push(Node {
+                    ind: None,
+                    val: JsonValue::String(v.as_str().unwrap().to_owned()),
+                }),
+                JsonType::Array => {
+                    let mut arr_node = Node {
+                        ind: None,
+                        val: JsonValue::Array(Vec::new()),
+                    };
+                    self.path.push_str("[]");
+                    if self.info_print {
+                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    }
+                    self.parse_array(v, &mut arr_node);
+                    if self.info_print {
+                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                    }
+                    self.path.truncate(self.path.len() - 2);
+                    arr.push(arr_node);
+                }
+                JsonType::Object => {
+                    let mut new_node = Node {
+                        ind: None,
+                        val: JsonValue::Object(HashMap::new()),
+                    };
+                    self.path.push_str("[]");
+                    if self.info_print {
+                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    }
+                    let ind = self.parse_object(v, &mut new_node);
+                    if self.info_print {
+                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                    }
+                    self.path.truncate(self.path.len() - 2);
+                    new_node.set_ind(ind);
+                    arr.push(new_node);
+                }
+            });
+    }
+
+    fn parse_object(&mut self, node: &Value, obj_node: &mut Node) -> usize {
+        assert!(node.get_type() == JsonType::Object);
+
+        let JsonValue::Object(map) = &mut obj_node.val else {
+            panic!("Expected node to be of object type");
+        };
+
+        let mut obj_type = Vec::new();
+
+        node.as_object().unwrap().iter().for_each(|(k, v)| {
+            obj_type.push((k.to_owned(), v.get_type()));
+            match v.get_type() {
+                JsonType::Boolean => {
+                    map.insert(
+                        k.to_owned(),
+                        Node {
+                            ind: None,
+                            val: JsonValue::Boolean(v.as_bool().unwrap()),
+                        },
+                    );
+                }
+                JsonType::Null => {
+                    map.insert(
+                        k.to_owned(),
+                        Node {
+                            ind: None,
+                            val: JsonValue::Null(()),
+                        },
+                    );
+                }
+                JsonType::Number => {
+                    map.insert(
+                        k.to_owned(),
+                        Node {
+                            ind: None,
+                            val: JsonValue::Number(v.as_number().unwrap()),
+                        },
+                    );
+                }
+                JsonType::String => {
+                    map.insert(
+                        k.to_owned(),
+                        Node {
+                            ind: None,
+                            val: JsonValue::String(v.as_str().unwrap().to_owned()),
+                        },
+                    );
+                }
+                JsonType::Array => {
+                    let mut arr_node = Node {
+                        ind: None,
+                        val: JsonValue::Array(Vec::new()),
+                    };
+                    self.path.push('.');
+                    self.path.push_str(k);
+                    if self.info_print {
+                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    }
+                    self.parse_array(v, &mut arr_node);
+                    if self.info_print {
+                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                    }
+                    self.path.truncate(self.path.len() - k.len() - 1);
+                    map.insert(k.to_owned(), arr_node);
+                }
+                JsonType::Object => {
+                    let mut new_node = Node {
+                        ind: None,
+                        val: JsonValue::Object(HashMap::new()),
+                    };
+                    self.path.push('.');
+                    self.path.push_str(k);
+                    if self.info_print {
+                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    }
+                    let ind = self.parse_object(v, &mut new_node);
+                    if self.info_print {
+                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                    }
+                    self.path.truncate(self.path.len() - k.len() - 1);
+                    new_node.set_ind(ind);
+                    map.insert(k.to_owned(), new_node);
+                }
+            };
+        });
+
+        obj_type.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        if self.variant_map.get(&self.path).is_none() {
+            self.variant_map.insert(self.path.clone(), Vec::new());
+        };
+        let var_vec = self.variant_map.get_mut(&self.path).unwrap();
+        let variant_ind;
+        if let Some(existing) = var_vec.iter().position(|v| v.variant == obj_type) {
+            variant_ind = existing;
+        } else {
+            if self.info_print {
+                println!("{: <1$}Found new variant: {obj_type:?}", "", self.indent);
+            } else {
+                println!("Found new variant: {obj_type:?}");
+            }
+            var_vec.push(Arc::new(ObjectVariant::new(obj_type)));
+            variant_ind = var_vec.len() - 1;
+        }
+        variant_ind
+    }
+}
+
+pub fn parse_root(root: &Value, info_print: bool) -> Json {
+    let mut temp_parse = Json::new(info_print);
+    temp_parse.parse_root(root);
+    temp_parse
 }
