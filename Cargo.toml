@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sonic-rs = "0.3.10"
+sonic-rs = "0.3.11"
 
 [profile.release]
 opt-level = 3
