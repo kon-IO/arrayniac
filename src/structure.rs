@@ -5,16 +5,16 @@ use sonic_rs::{JsonContainerTrait, JsonType, JsonValueTrait, Number, Value};
 // type Variants = Vec<TypeNode>;
 
 #[derive(Debug)]
-enum JsonValue {
+enum JsonValue<'a> {
     Null,
     Boolean(bool),
-    String(String),
+    String(&'a str),
     Number(Number),
-    Object(HashMap<String, Node>),
-    Array(Vec<Node>),
+    Object(HashMap<&'a str, Node<'a>>),
+    Array(Vec<Node<'a>>),
 }
 
-impl JsonValue {
+impl JsonValue<'_> {
     fn json_type(&self) -> JsonType {
         match self {
             JsonValue::Array(_) => JsonType::Array,
@@ -28,12 +28,12 @@ impl JsonValue {
 }
 
 #[derive(Debug)]
-pub struct Node {
+pub struct Node<'a> {
     ind: Option<usize>,
-    val: JsonValue,
+    val: JsonValue<'a>,
 }
 
-impl Node {
+impl Node<'_> {
     fn set_ind(&mut self, ind: usize) {
         self.ind = Some(ind);
     }
@@ -57,7 +57,7 @@ pub struct Json<'a> {
     indent: usize,
     info_print: bool,
     variant_map: HashMap<String, ObjectVariants<'a>>,
-    res: Option<Node>,
+    res: Option<Node<'a>>,
 }
 
 impl<'a> Json<'a> {
@@ -122,7 +122,7 @@ impl<'a> Json<'a> {
         sonic_rs::to_string(&out_map).unwrap()
     }
 
-    fn to_string_node(&'_ self, path: &mut String, node: &Node) -> String {
+    fn to_string_node(&self, path: &mut String, node: &Node) -> String {
         match &node.val {
             JsonValue::Null => "null".to_owned(),
             JsonValue::Number(n) => sonic_rs::to_string(n).unwrap(),
@@ -206,7 +206,7 @@ impl<'a> Json<'a> {
             },
             JsonType::String => Node {
                 ind: None,
-                val: JsonValue::String(root.as_str().unwrap().to_owned()),
+                val: JsonValue::String(root.as_str().unwrap()),
             },
             JsonType::Number => Node {
                 ind: None,
@@ -233,7 +233,7 @@ impl<'a> Json<'a> {
         self.res = Some(res);
     }
 
-    fn parse_array(&'_ mut self, node: &'a Value, array_node: &mut Node) {
+    fn parse_array(&mut self, node: &'a Value, array_node: &mut Node<'a>) {
         assert!(node.get_type() == JsonType::Array);
 
         let JsonValue::Array(arr) = &mut array_node.val else {
@@ -256,7 +256,7 @@ impl<'a> Json<'a> {
                 }),
                 JsonType::String => arr.push(Node {
                     ind: None,
-                    val: JsonValue::String(v.as_str().unwrap().to_owned()),
+                    val: JsonValue::String(v.as_str().unwrap()),
                 }),
                 JsonType::Array => {
                     let mut arr_node = Node {
@@ -302,7 +302,7 @@ impl<'a> Json<'a> {
             }
         }
     }
-    fn parse_object(&'_ mut self, node: &'a Value, obj_node: &'_ mut Node) -> usize {
+    fn parse_object(&mut self, node: &'a Value, obj_node: &mut Node<'a>) -> usize {
         assert!(node.get_type() == JsonType::Object);
 
         let JsonValue::Object(map) = &mut obj_node.val else {
@@ -316,7 +316,7 @@ impl<'a> Json<'a> {
             match v.get_type() {
                 JsonType::Boolean => {
                     map.insert(
-                        k.to_owned(),
+                        k,
                         Node {
                             ind: None,
                             val: JsonValue::Boolean(v.as_bool().unwrap()),
@@ -325,7 +325,7 @@ impl<'a> Json<'a> {
                 }
                 JsonType::Null => {
                     map.insert(
-                        k.to_owned(),
+                        k,
                         Node {
                             ind: None,
                             val: JsonValue::Null,
@@ -334,7 +334,7 @@ impl<'a> Json<'a> {
                 }
                 JsonType::Number => {
                     map.insert(
-                        k.to_owned(),
+                        k,
                         Node {
                             ind: None,
                             val: JsonValue::Number(v.as_number().unwrap()),
@@ -343,10 +343,10 @@ impl<'a> Json<'a> {
                 }
                 JsonType::String => {
                     map.insert(
-                        k.to_owned(),
+                        k,
                         Node {
                             ind: None,
-                            val: JsonValue::String(v.as_str().unwrap().to_owned()),
+                            val: JsonValue::String(v.as_str().unwrap()),
                         },
                     );
                 }
@@ -365,7 +365,7 @@ impl<'a> Json<'a> {
                         println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
                     }
                     self.path.truncate(self.path.len() - k.len() - 1);
-                    map.insert(k.to_owned(), arr_node);
+                    map.insert(k, arr_node);
                 }
                 JsonType::Object => {
                     let mut new_node = Node {
@@ -383,7 +383,7 @@ impl<'a> Json<'a> {
                     }
                     self.path.truncate(self.path.len() - k.len() - 1);
                     new_node.set_ind(ind);
-                    map.insert(k.to_owned(), new_node);
+                    map.insert(k, new_node);
                 }
             };
         });
