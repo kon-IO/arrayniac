@@ -40,57 +40,59 @@ impl Node {
 }
 
 #[derive(Debug)]
-pub struct ObjectVariant {
-    variant: Vec<(String, JsonType)>,
+pub struct ObjectVariant<'a> {
+    variant: Vec<(&'a str, JsonType)>,
 }
 
-impl ObjectVariant {
-    fn new(variant: Vec<(String, JsonType)>) -> ObjectVariant {
+impl<'a> ObjectVariant<'a> {
+    fn new(variant: Vec<(&'a str, JsonType)>) -> ObjectVariant<'a> {
         return ObjectVariant { variant };
     }
 }
 
-pub type ObjectVariants = Vec<Arc<ObjectVariant>>;
+pub type ObjectVariants<'a> = Vec<Arc<ObjectVariant<'a>>>;
 
-pub struct Json {
+pub struct Json<'a> {
     path: String,
     indent: usize,
     info_print: bool,
-    variant_map: HashMap<String, ObjectVariants>,
+    variant_map: HashMap<String, ObjectVariants<'a>>,
     res: Option<Node>,
 }
 
-impl Json {
-    fn new(info_print: bool) -> Json {
-        return Json {
+impl<'a> Json<'a> {
+    fn new(info_print: bool, root: &'a Value) -> Json<'a> {
+        let mut n = Json {
             path: String::new(),
             indent: 0,
             info_print: info_print,
             variant_map: HashMap::new(),
             res: None,
         };
+        n.parse_root(root);
+        n
     }
 
     pub fn get_root(&self) -> &Node {
         return self.res.as_ref().unwrap();
     }
 
-    pub fn get_variants(&self) -> &HashMap<String, ObjectVariants> {
+    pub fn get_variants(&self) -> &HashMap<String, ObjectVariants<'a>> {
         return &self.variant_map;
     }
 
     pub fn to_string(&self) -> Option<(String, String)> {
-        let Some(root) = &self.res else {
+        let Some(ref l) = self.res else {
             return None;
         };
         Some((
-            self.to_string_node(&mut String::new(), root),
+            self.to_string_node(&mut String::new(), l),
             self.to_string_variant(),
         ))
     }
 
     fn to_string_variant(&self) -> String {
-        let mut out_map: HashMap<String, Value> = HashMap::new();
+        let mut out_map: HashMap<&str, Value> = HashMap::new();
         for (path, variants) in &self.variant_map {
             if variants.len() == 1 {
                 let mut var_map = HashMap::new();
@@ -101,26 +103,26 @@ impl Json {
                     .iter()
                     .enumerate()
                     .for_each(|(ind, (name, _))| {
-                        var_map.insert(name.clone(), ind);
+                        var_map.insert(name, ind);
                     });
 
-                out_map.insert(path.clone(), sonic_rs::to_value(&var_map).unwrap());
+                out_map.insert(path.as_str(), sonic_rs::to_value(&var_map).unwrap());
                 continue;
             }
             let mut var_arr = Vec::new();
             for var in variants {
                 let mut var_map = HashMap::new();
                 var.variant.iter().enumerate().for_each(|(ind, (name, _))| {
-                    var_map.insert(name.clone(), ind);
+                    var_map.insert(*name, ind);
                 });
                 var_arr.push(var_map);
             }
-            out_map.insert(path.clone(), sonic_rs::to_value(&var_arr).unwrap());
+            out_map.insert(path, sonic_rs::to_value(&var_arr).unwrap());
         }
         sonic_rs::to_string(&out_map).unwrap()
     }
 
-    fn to_string_node(&self, path: &mut String, node: &Node) -> String {
+    fn to_string_node(&'_ self, path: &mut String, node: &Node) -> String {
         match &node.val {
             JsonValue::Null(_) => "null".to_owned(),
             JsonValue::Number(n) => sonic_rs::to_string(n).unwrap(),
@@ -160,7 +162,7 @@ impl Json {
                 for (k, v) in variant.variant.iter() {
                     let (_, val) = o
                         .iter()
-                        .find(|(key, _)| *key == k)
+                        .find(|(key, _)| **key == *k)
                         .expect("Expect to find key");
 
                     assert!(val.val.json_type() == *v);
@@ -181,7 +183,7 @@ impl Json {
     fn get_variant(&self, path: &String, ind: usize) -> (usize, Arc<ObjectVariant>) {
         let our_variants = self
             .variant_map
-            .get(path)
+            .get(path.as_str())
             .expect("Expected variant vector to exist");
         (
             our_variants.len(),
@@ -192,7 +194,7 @@ impl Json {
         )
     }
 
-    fn parse_root(&mut self, root: &Value) {
+    fn parse_root(&mut self, root: &'a Value) {
         let res = match root.get_type() {
             JsonType::Boolean => Node {
                 ind: None,
@@ -231,17 +233,15 @@ impl Json {
         self.res = Some(res);
     }
 
-    fn parse_array(&mut self, node: &Value, array_node: &mut Node) {
+    fn parse_array(&'_ mut self, node: &'a Value, array_node: &mut Node) {
         assert!(node.get_type() == JsonType::Array);
 
         let JsonValue::Array(arr) = &mut array_node.val else {
             panic!("Expected node to be of array type");
         };
 
-        node.as_array()
-            .unwrap()
-            .iter()
-            .for_each(|v| match v.get_type() {
+        for v in node.as_array().unwrap().iter() {
+            match v.get_type() {
                 JsonType::Null => arr.push(Node {
                     ind: None,
                     val: JsonValue::Null(()),
@@ -263,13 +263,21 @@ impl Json {
                         ind: None,
                         val: JsonValue::Array(Vec::new()),
                     };
-                    self.path.push_str("[]");
-                    if self.info_print {
-                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    {
+                        self.path.push_str("[]");
                     }
-                    self.parse_array(v, &mut arr_node);
-                    if self.info_print {
-                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                    {
+                        if self.info_print {
+                            println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                        }
+                    }
+                    {
+                        self.parse_array(v, &mut arr_node);
+                    }
+                    {
+                        if self.info_print {
+                            println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                        }
                     }
                     self.path.truncate(self.path.len() - 2);
                     arr.push(arr_node);
@@ -291,10 +299,10 @@ impl Json {
                     new_node.set_ind(ind);
                     arr.push(new_node);
                 }
-            });
+            }
+        }
     }
-
-    fn parse_object(&mut self, node: &Value, obj_node: &mut Node) -> usize {
+    fn parse_object(&'_ mut self, node: &'a Value, obj_node: &'_ mut Node) -> usize {
         assert!(node.get_type() == JsonType::Object);
 
         let JsonValue::Object(map) = &mut obj_node.val else {
@@ -304,7 +312,7 @@ impl Json {
         let mut obj_type = Vec::new();
 
         node.as_object().unwrap().iter().for_each(|(k, v)| {
-            obj_type.push((k.to_owned(), v.get_type()));
+            obj_type.push((k, v.get_type()));
             match v.get_type() {
                 JsonType::Boolean => {
                     map.insert(
@@ -380,11 +388,11 @@ impl Json {
             };
         });
 
-        obj_type.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        if self.variant_map.get(&self.path).is_none() {
+        obj_type.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
+        if self.variant_map.get(self.path.as_str()).is_none() {
             self.variant_map.insert(self.path.clone(), Vec::new());
         };
-        let var_vec = self.variant_map.get_mut(&self.path).unwrap();
+        let var_vec = self.variant_map.get_mut(self.path.as_str()).unwrap();
         let variant_ind;
         if let Some(existing) = var_vec.iter().position(|v| v.variant == obj_type) {
             variant_ind = existing;
@@ -402,7 +410,6 @@ impl Json {
 }
 
 pub fn parse_root(root: &Value, info_print: bool) -> Json {
-    let mut temp_parse = Json::new(info_print);
-    temp_parse.parse_root(root);
+    let temp_parse = Json::new(info_print, root);
     temp_parse
 }
