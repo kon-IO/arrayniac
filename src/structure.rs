@@ -6,7 +6,7 @@ use sonic_rs::{JsonContainerTrait, JsonType, JsonValueTrait, Number, Value};
 
 #[derive(Debug)]
 enum JsonValue {
-    Null(()),
+    Null,
     Boolean(bool),
     String(String),
     Number(Number),
@@ -19,7 +19,7 @@ impl JsonValue {
         match self {
             JsonValue::Array(_) => JsonType::Array,
             JsonValue::Boolean(_) => JsonType::Boolean,
-            JsonValue::Null(_) => JsonType::Null,
+            JsonValue::Null => JsonType::Null,
             JsonValue::Number(_) => JsonType::Number,
             JsonValue::String(_) => JsonType::String,
             JsonValue::Object(_) => JsonType::Object,
@@ -124,7 +124,7 @@ impl<'a> Json<'a> {
 
     fn to_string_node(&'_ self, path: &mut String, node: &Node) -> String {
         match &node.val {
-            JsonValue::Null(_) => "null".to_owned(),
+            JsonValue::Null => "null".to_owned(),
             JsonValue::Number(n) => sonic_rs::to_string(n).unwrap(),
             JsonValue::String(s) => sonic_rs::to_string(s).unwrap(),
             JsonValue::Boolean(b) => {
@@ -202,7 +202,7 @@ impl<'a> Json<'a> {
             },
             JsonType::Null => Node {
                 ind: None,
-                val: JsonValue::Null(()),
+                val: JsonValue::Null,
             },
             JsonType::String => Node {
                 ind: None,
@@ -244,7 +244,7 @@ impl<'a> Json<'a> {
             match v.get_type() {
                 JsonType::Null => arr.push(Node {
                     ind: None,
-                    val: JsonValue::Null(()),
+                    val: JsonValue::Null,
                 }),
                 JsonType::Boolean => arr.push(Node {
                     ind: None,
@@ -328,7 +328,7 @@ impl<'a> Json<'a> {
                         k.to_owned(),
                         Node {
                             ind: None,
-                            val: JsonValue::Null(()),
+                            val: JsonValue::Null,
                         },
                     );
                 }
