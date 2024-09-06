@@ -1,8 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use sonic_rs::{JsonContainerTrait, JsonType, JsonValueTrait, Number, Value};
-
-// type Variants = Vec<TypeNode>;
 
 #[derive(Debug)]
 enum JsonValue<'a> {
@@ -15,6 +13,7 @@ enum JsonValue<'a> {
 }
 
 impl JsonValue<'_> {
+    #[allow(dead_code)]
     fn json_type(&self) -> JsonType {
         match self {
             JsonValue::Array(_) => JsonType::Array,
@@ -39,21 +38,10 @@ impl Node<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct ObjectVariant<'a> {
-    variant: Vec<(&'a str, JsonType)>,
-}
-
-impl<'a> ObjectVariant<'a> {
-    fn new(variant: Vec<(&'a str, JsonType)>) -> ObjectVariant<'a> {
-        return ObjectVariant { variant };
-    }
-}
-
-pub type ObjectVariants<'a> = Vec<Arc<ObjectVariant<'a>>>;
+pub type ObjectVariants<'a> = Vec<Rc<Vec<&'a str>>>;
 
 pub struct Json<'a> {
-    path: String,
+    path: RefCell<String>,
     indent: usize,
     info_print: bool,
     variant_map: HashMap<String, ObjectVariants<'a>>,
@@ -63,7 +51,7 @@ pub struct Json<'a> {
 impl<'a> Json<'a> {
     fn new(info_print: bool, root: &'a Value) -> Json<'a> {
         let mut n = Json {
-            path: String::new(),
+            path: RefCell::new(String::new()),
             indent: 0,
             info_print: info_print,
             variant_map: HashMap::new(),
@@ -82,13 +70,11 @@ impl<'a> Json<'a> {
     }
 
     pub fn to_string(&self) -> Option<(String, String)> {
-        let Some(ref l) = self.res else {
+        let Some(ref n) = self.res else {
             return None;
         };
-        Some((
-            self.to_string_node(&mut String::new(), l),
-            self.to_string_variant(),
-        ))
+
+        Some((self.to_string_node(n), self.to_string_variant()))
     }
 
     fn to_string_variant(&self) -> String {
@@ -99,10 +85,9 @@ impl<'a> Json<'a> {
                 variants
                     .get(0)
                     .unwrap()
-                    .variant
                     .iter()
                     .enumerate()
-                    .for_each(|(ind, (name, _))| {
+                    .for_each(|(ind, name)| {
                         var_map.insert(name, ind);
                     });
 
@@ -112,7 +97,7 @@ impl<'a> Json<'a> {
             let mut var_arr = Vec::new();
             for var in variants {
                 let mut var_map = HashMap::new();
-                var.variant.iter().enumerate().for_each(|(ind, (name, _))| {
+                var.iter().enumerate().for_each(|(ind, name)| {
                     var_map.insert(*name, ind);
                 });
                 var_arr.push(var_map);
@@ -122,7 +107,7 @@ impl<'a> Json<'a> {
         sonic_rs::to_string(&out_map).unwrap()
     }
 
-    fn to_string_node(&self, path: &mut String, node: &Node) -> String {
+    fn to_string_node(&self, node: &Node) -> String {
         match &node.val {
             JsonValue::Null => "null".to_owned(),
             JsonValue::Number(n) => sonic_rs::to_string(n).unwrap(),
@@ -135,15 +120,20 @@ impl<'a> Json<'a> {
                 }
             }
             JsonValue::Array(arr) => {
-                path.push_str("[]");
+                {
+                    let mut path = self.path.borrow_mut();
+                    path.push_str("[]");
+                }
                 let str_arr: Vec<String> = arr
                     .into_iter()
                     .map(|v| {
-                        let val = self.to_string_node(path, &v);
+                        let val = self.to_string_node(&v);
                         val
                     })
                     .collect();
-                path.truncate(path.len() - 2);
+                let mut path = self.path.borrow_mut();
+                let len = path.len();
+                path.truncate(len - 2);
                 // TODO: This is BAD
                 let mut out_str = str_arr.join(",");
                 out_str.insert(0, '[');
@@ -151,26 +141,34 @@ impl<'a> Json<'a> {
                 out_str
             }
             JsonValue::Object(o) => {
-                let ind = node.ind.expect("Expected object to have a variant index");
-                let (variants_len, variant) = self.get_variant(path, ind);
+                let (variants_len, variant);
                 let mut s = "[".to_owned();
-                if variants_len != 1 {
-                    s.push_str(&ind.to_string());
-                    s.push(',');
+                {
+                    let path = self.path.borrow_mut();
+                    let ind = node.ind.expect("Expected object to have a variant index");
+                    (variants_len, variant) = self.get_variant(&path, ind);
+                    if variants_len != 1 {
+                        s.push_str(&ind.to_string());
+                        s.push(',');
+                    }
                 }
 
-                for (k, v) in variant.variant.iter() {
+                for k in variant.iter() {
                     let (_, val) = o
                         .iter()
                         .find(|(key, _)| **key == *k)
                         .expect("Expect to find key");
 
-                    assert!(val.val.json_type() == *v);
-                    path.push('.');
-                    path.push_str(&k);
-                    s.push_str(self.to_string_node(path, val).as_str());
+                    {
+                        let mut path = self.path.borrow_mut();
+                        path.push('.');
+                        path.push_str(&k);
+                    }
+                    s.push_str(self.to_string_node(val).as_str());
                     s.push_str(",");
-                    path.truncate(path.len() - k.len() - 1);
+                    let mut path = self.path.borrow_mut();
+                    let len = path.len();
+                    path.truncate(len - k.len() - 1);
                 }
                 // Remove last comma
                 s.truncate(s.len() - 1);
@@ -180,17 +178,18 @@ impl<'a> Json<'a> {
         }
     }
 
-    fn get_variant(&self, path: &String, ind: usize) -> (usize, Arc<ObjectVariant>) {
+    fn get_variant(&self, path: &String, ind: usize) -> (usize, Rc<Vec<&'a str>>) {
         let our_variants = self
             .variant_map
             .get(path.as_str())
             .expect("Expected variant vector to exist");
         (
             our_variants.len(),
-            our_variants
-                .get(ind)
-                .expect("Expected object variant to exist")
-                .clone(),
+            Rc::clone(
+                &our_variants
+                    .get(ind)
+                    .expect("Expected object variant to exist"),
+            ),
         )
     }
 
@@ -264,22 +263,18 @@ impl<'a> Json<'a> {
                         val: JsonValue::Array(Vec::new()),
                     };
                     {
-                        self.path.push_str("[]");
-                    }
-                    {
+                        let p = self.path.get_mut();
+                        p.push_str("[]");
                         if self.info_print {
-                            println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                            println!("{: <1$}Going into path {2}", "", self.indent, p);
                         }
                     }
-                    {
-                        self.parse_array(v, &mut arr_node);
+                    self.parse_array(v, &mut arr_node);
+                    let p = self.path.get_mut();
+                    if self.info_print {
+                        println!("{: <1$}Going out of path {2}", "", self.indent, p);
                     }
-                    {
-                        if self.info_print {
-                            println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
-                        }
-                    }
-                    self.path.truncate(self.path.len() - 2);
+                    p.truncate(p.len() - 2);
                     arr.push(arr_node);
                 }
                 JsonType::Object => {
@@ -287,15 +282,27 @@ impl<'a> Json<'a> {
                         ind: None,
                         val: JsonValue::Object(HashMap::new()),
                     };
-                    self.path.push_str("[]");
-                    if self.info_print {
-                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    {
+                        let p = self.path.get_mut();
+                        p.push_str("[]");
+                        if self.info_print {
+                            println!("{: <1$}Going into path {2}", "", self.indent, p);
+                        }
                     }
                     let ind = self.parse_object(v, &mut new_node);
-                    if self.info_print {
-                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                    {
+                        if self.info_print {
+                            println!(
+                                "{: <1$}Going out of path {2}",
+                                "",
+                                self.indent,
+                                self.path.borrow()
+                            );
+                        }
                     }
-                    self.path.truncate(self.path.len() - 2);
+                    let p = self.path.get_mut();
+                    let len = p.len();
+                    p.truncate(len - 2);
                     new_node.set_ind(ind);
                     arr.push(new_node);
                 }
@@ -312,7 +319,7 @@ impl<'a> Json<'a> {
         let mut obj_type = Vec::new();
 
         node.as_object().unwrap().iter().for_each(|(k, v)| {
-            obj_type.push((k, v.get_type()));
+            obj_type.push(k);
             match v.get_type() {
                 JsonType::Boolean => {
                     map.insert(
@@ -355,16 +362,20 @@ impl<'a> Json<'a> {
                         ind: None,
                         val: JsonValue::Array(Vec::new()),
                     };
-                    self.path.push('.');
-                    self.path.push_str(k);
-                    if self.info_print {
-                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    {
+                        let p = self.path.get_mut();
+                        p.push('.');
+                        p.push_str(k);
+                        if self.info_print {
+                            println!("{: <1$}Going into path {2}", "", self.indent, p);
+                        }
                     }
                     self.parse_array(v, &mut arr_node);
+                    let p = self.path.get_mut();
                     if self.info_print {
-                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                        println!("{: <1$}Going out of path {2}", "", self.indent, p);
                     }
-                    self.path.truncate(self.path.len() - k.len() - 1);
+                    p.truncate(p.len() - k.len() - 1);
                     map.insert(k, arr_node);
                 }
                 JsonType::Object => {
@@ -372,37 +383,45 @@ impl<'a> Json<'a> {
                         ind: None,
                         val: JsonValue::Object(HashMap::new()),
                     };
-                    self.path.push('.');
-                    self.path.push_str(k);
-                    if self.info_print {
-                        println!("{: <1$}Going into path {2}", "", self.indent, self.path);
+                    {
+                        let p = self.path.get_mut();
+                        p.push('.');
+                        p.push_str(k);
+                        if self.info_print {
+                            println!("{: <1$}Going into path {2}", "", self.indent, p);
+                        }
                     }
                     let ind = self.parse_object(v, &mut new_node);
+                    let p = self.path.get_mut();
                     if self.info_print {
-                        println!("{: <1$}Going out of path {2}", "", self.indent, self.path);
+                        println!("{: <1$}Going out of path {2}", "", self.indent, p);
                     }
-                    self.path.truncate(self.path.len() - k.len() - 1);
+                    p.truncate(p.len() - k.len() - 1);
                     new_node.set_ind(ind);
                     map.insert(k, new_node);
                 }
             };
         });
 
-        obj_type.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
-        if self.variant_map.get(self.path.as_str()).is_none() {
-            self.variant_map.insert(self.path.clone(), Vec::new());
+        obj_type.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p = self.path.get_mut();
+        if self.variant_map.get(p.as_str()).is_none() {
+            self.variant_map.insert(p.clone(), Vec::new());
         };
-        let var_vec = self.variant_map.get_mut(self.path.as_str()).unwrap();
+        let var_vec = self.variant_map.get_mut(p.as_str()).unwrap();
         let variant_ind;
-        if let Some(existing) = var_vec.iter().position(|v| v.variant == obj_type) {
+        if let Some(existing) = var_vec.iter().position(|v| **v == obj_type) {
             variant_ind = existing;
         } else {
             if self.info_print {
-                println!("{: <1$}Found new variant: {obj_type:?}", "", self.indent);
+                println!(
+                    "{: <1$}Found new variant in {2}: {obj_type:?}",
+                    "", self.indent, p
+                );
             } else {
-                println!("Found new variant: {obj_type:?}");
+                println!("Found new variant in {}: {obj_type:?}", p);
             }
-            var_vec.push(Arc::new(ObjectVariant::new(obj_type)));
+            var_vec.push(Rc::new(obj_type));
             variant_ind = var_vec.len() - 1;
         }
         variant_ind
